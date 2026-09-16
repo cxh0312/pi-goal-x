@@ -5,8 +5,8 @@ All notable changes to pi-goal-x are documented here.
 ## Fork note — cxh0312/pi-goal-x (based on upstream v0.31.5)
 
 Fork of `tmonk/pi-goal-x`, pinned by the desktop app's preset as
-`https://github.com/cxh0312/pi-goal-x.git@v0.31.5-pi-rpc-dialogs.1`. Only
-difference from upstream v0.31.5:
+`https://github.com/cxh0312/pi-goal-x.git@v0.31.5-pi-rpc-dialogs.3`. Differences
+from upstream v0.31.5:
 
 - **`runGoalQuestionnaire` no longer force-falls-back to per-question dialogs in
   `"rpc"` mode.** Mode is not a capability signal: pi-web runs sessions in
@@ -18,10 +18,17 @@ difference from upstream v0.31.5:
   still degrade through the existing paths — the factory bails out with
   `done(undefined)` when the TUI it receives lacks
   `getShowHardwareCursor`/`setShowHardwareCursor`/`requestRender`, and that
-  result falls back to `runQuestionnaireWithBasicDialogs`. A host that throws
-  while building the component still surfaces its error (unchanged upstream
-  behavior, covered by `tests/goal-rpc-dialogs.test.ts`).
-
+  result falls back to `runQuestionnaireWithBasicDialogs`.
+- **RPC hosts keep a throw safety net.** `ctx.mode === "rpc"` hosts never reached
+  the rich path before, so a `custom()` that throws (including synchronous
+  throws) now degrades to the per-question dialogs *after* a `notify` explaining
+  why, instead of failing the whole draft. Non-rpc hosts keep upstream semantics:
+  the error surfaces to the caller, which reports it and keeps the draft alive.
+- Tests (`tests/goal-rpc-dialogs.test.ts`) pin the routing (rpc + capable TUI →
+  rich dialog; rpc + throw → degrade; non-rpc + throw → surface; TUI-less host →
+  factory bail-out) and the key semantics through `component.handleInput`
+  (`\r` commits the recommended option; `\x1b` returns a *defined* cancelled
+  result, so cancelling can never resurrect the per-question dialogs).
 
 ## [Unreleased]
 

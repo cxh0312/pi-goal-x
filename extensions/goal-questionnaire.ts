@@ -1028,7 +1028,15 @@ function advanceAfterAnswer() {
 	// degrades to per-question dialogs instead of failing the whole draft. Non-rpc
 	// hosts keep upstream semantics — their errors surface to the caller.
 	const result = ctx.mode === "rpc"
-		? await showRichDialog().catch(() => undefined)
+		? await showRichDialog().catch((error) => {
+			// Degrading silently would look like the per-question dialogs came back for no
+			// reason (and any already-answered questions are re-asked): say why first.
+			ctx.ui.notify(
+				`Goal dialog could not be rendered by this host (${error instanceof Error ? error.message : String(error)}); falling back to one dialog per question.`,
+				"warning",
+			);
+			return undefined;
+		})
 		: await showRichDialog();
 	if (result !== undefined) return result;
 	return runQuestionnaireWithBasicDialogs(ctx, questions, auditorToggleInit);

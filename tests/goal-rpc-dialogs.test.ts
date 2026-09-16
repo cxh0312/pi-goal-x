@@ -8,15 +8,10 @@ function host(picks: (number | undefined)[] = [], inputs: (string | undefined)[]
 	const ctx = {
 		hasUI: true, mode: "rpc", cwd: "/test",
 		ui: {
-			// Default stub: a host that advertises `custom` but cannot render TUI
-			// components — the factory's capability bail-out yields undefined, so the
-			// questionnaire degrades to per-question dialogs. Tests that need a
-			// capable (or a throwing) host override this.
-			custom: (async (factory: unknown) => {
-				const component = (factory as (t: unknown, th: unknown, kb: unknown, done: unknown) => { render: (w: number) => string[] })(() => {}, {}, {}, () => {});
-				assert.deepEqual(component.render(80), []);
-				return undefined;
-			}) as unknown as ExtensionContext["ui"]["custom"],
+			// Default stub: a host that advertises `custom` but yields no result (its
+			// TUI cannot render the component), so the questionnaire degrades to
+			// per-question dialogs. Tests needing a capable/throwing host override it.
+			custom: (async () => undefined) as unknown as ExtensionContext["ui"]["custom"],
 			setWorkingVisible: () => {},
 			select: async (title: string, options: string[]) => {
 				dialogs.push({ title, options });
@@ -58,11 +53,32 @@ test("rpc hosts that DO render TUI components get the rich dialog (no per-questi
 	assert.equal(result.answers[0]?.answer, "B");
 });
 
-test("a host that advertises custom but throws surfaces the error instead of degrading", async () => {
+test("an rpc host that advertises custom but throws degrades instead of failing the draft", async () => {
 	const h = host([1]);
 	h.ctx.ui.custom = (async () => { throw new Error("host cannot render TUI dialogs"); }) as typeof h.ctx.ui.custom;
-	await assert.rejects(() => runGoalQuestionnaire(h.ctx, [question]), /host cannot render TUI dialogs/);
-	assert.equal(h.dialogs.length, 0, "a broken host must not silently switch to per-question dialogs");
+	const result = await runGoalQuestionnaire(h.ctx, [question]);
+	assert.equal(result.answers[0]?.answer, "B", "rpc hosts keep their safety net: throw -> per-question dialogs");
+	assert.equal(h.dialogs.length, 1);
+});
+
+test("a non-rpc host that throws keeps upstream semantics (the error surfaces)", async () => {
+	const h = host([1]);
+	delete (h.ctx as Partial<ExtensionContext>).mode;
+	h.ctx.ui.custom = (async () => { throw new Error("Host disconnected"); }) as typeof h.ctx.ui.custom;
+	await assert.rejects(() => runGoalQuestionnaire(h.ctx, [question]), /Host disconnected/);
+	assert.equal(h.dialogs.length, 0);
+});
+
+test("a TUI-less host still bails out through the factory capability check", async () => {
+	const h = host([1]);
+	h.ctx.ui.custom = (async (factory: unknown) => {
+		const component = (factory as (t: unknown, th: unknown, kb: unknown, done: unknown) => { render: (w: number) => string[] })(() => {}, {}, {}, () => {});
+		assert.deepEqual(component.render(80), []);
+		return undefined;
+	}) as unknown as ExtensionContext["ui"]["custom"];
+	const result = await runGoalQuestionnaire(h.ctx, [question]);
+	assert.equal(result.answers[0]?.answer, "B");
+	assert.equal(h.dialogs.length, 1);
 });
 
 test("per-question dialogs still preserve recommendation labels when custom is absent", async () => {
